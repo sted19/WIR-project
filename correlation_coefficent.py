@@ -1,49 +1,100 @@
 
 import numpy as np
+import math
+
+calculated_esplicit_dict = {}
+calculated_implicit_dict = {}
+
+
+"""
+    Calculates the average value of the 
+    valeues in a
+
+    a -> dictionary of non zero values 
+"""
+def avg(a):
+    i=0
+    tot = 0
+    for k in a.keys():
+        i +=1
+        tot += a.get(k)
+    
+    return tot/i
+
+"""
+    Calculates a new dictionary that for each
+    non null value of a has that values - const
+
+    returns a - const
+
+    a -> dictioary of non zero values
+"""
+def scale(a,const):
+    ret = {}
+    
+    for k in a.keys():
+        pass
+        ret[k] = a.get(k) - const
+    
+    return ret
+
+"""
+    calculates the norm of a dictionary
+
+    a -> dictioary of non zero values
+
+"""
+def norm (a):
+    tot = 0
+    for k in a.keys():
+        tot += pow(a.get(k),2) 
+
+    return math.sqrt(tot)
+
+"""
+    computes the inner product of two dictionaries
+
+    a -> dictioary of non zero values
+    b -> dictioary of non zero values
+
+"""
+def inner_product(a,b):
+    tot = 0
+    for k in a.keys():
+        b_tmp = b.get(k)
+        if(b_tmp != None):
+            tot += b_tmp * a.get(k) 
+
+    return tot
 
 """
     Calculates the correlation coefficent
         between two vectors
     
-    a, b vectors
+    a, b dictionaries of non zero values
+
     esplicit -> boolean value that  defines if we
     need to scale or not cause in the case of implicit
     we do not need to scale
 """
-
-calculated_esplicit_vectors = {}
-calculated_implicit_vectors = {}
-
 def correlation_coefficent(a,b, esplicit):
 
     a_scaled = a
     b_scaled = b
 
-    if(len(a) != len(b)):
-        raise Exception('a and b must have the same lenght')
-    
     if(esplicit):
-        a_non_zero_vals = np.count_nonzero(a)
-        b_non_zero_vals = np.count_nonzero(b)
 
-        avg_a = np.sum(a)/a_non_zero_vals
-        avg_b = np.sum(b)/b_non_zero_vals
+        avg_a = avg(a)
+        avg_b = avg(b)
 
-        a_scaled = [0]*len(a)
-        b_scaled = [0]*len(b)
+        a_scaled = scale(a, avg_a)
+        b_scaled = scale(b, avg_b)
 
-        for i in range(0,len(a)):
-            if(a[i] != 0):
-                a_scaled[i] = a[i] - avg_a
-            
-            if(b[i] != 0):
-                b_scaled[i] = b[i] - avg_b
+    a_scaled_norm = norm(a_scaled)
+    b_scaled_norm = norm(b_scaled)
 
-    a_scaled_norm = np.linalg.norm(a_scaled)
-    b_scaled_norm = np.linalg.norm(b_scaled)
+    sim = inner_product(a_scaled,b_scaled)/(a_scaled_norm*b_scaled_norm)
 
-    sim = np.inner(a_scaled,b_scaled)/(a_scaled_norm*b_scaled_norm)
-    #print(sim)
     return sim
 
 """
@@ -51,9 +102,9 @@ def correlation_coefficent(a,b, esplicit):
     and the other users 
     
     x -> userID
-    d -> matrix of all the users
-        rows -> users
-        cols -> items
+    d -> dictionary of all the users
+        d[user][item] -> rating from user for that item
+        if it exists
     
     esplicit -> boolean value that  defines if we
     need to scale or not cause in the case of implicit
@@ -62,46 +113,57 @@ def correlation_coefficent(a,b, esplicit):
 """
 def most_similar_users (x,d, esplicit):
 
-    x_vect = d[x]
+    x_dict = d.get(x)
+    if(x_dict == None):
+        raise Exception("x has to be a real user")
 
-    vect_sim = []
+    dict_sim = {}
 
-    for user in range(0, len(d)):
+    for user in d.keys():
         if(x == user):
             continue
         
-        sim_x_user = correlation_coefficent(x_vect, d[user], esplicit)
-        vect_sim.append([sim_x_user, user])
+        user_dict = d.get(user)
+        if(user_dict == None):
+            print("This should never happen: correlation_coefficent.py -> most_similar_users()")
+            continue
+
+        sim_x_user = correlation_coefficent(x_dict, user_dict, esplicit)
+        dict_sim[user] = sim_x_user
     
-    vect_sim = np.array(vect_sim)
-    
-    return vect_sim
+    return dict_sim
 
 """
-    This is not a normal sum of vectors
-    cause each vector v1, v2 has each component
-    as follows: [sim_score, user_id]
+    weighted sum of scores 
+    d1 and d2 dictionries
+
+    a, b weights
 """
-def sum_vectors(v1, v2, a, b):
+def sum_vectors(d1, d2, a, b):
     ret = []
-    for i in range(0, len(v1)):
-        pass
-        if(v1[i][1] != v2[i][1]):
-            raise Exception('The vector has to have the same users in the same positions')
-        summed_sim = v1[i][0]*a + v2[i][0]*b
-        ret.append([summed_sim, v1[i][1]])
-    
+
+    users_1 = set(d1.keys())
+    users_2 = set(d2.keys())
+
+    users = users_1.union(users_2) 
+
+    for user in users:
+        
+        summed_sim = d1[user]*a + d2[user]*b
+        ret.append([summed_sim, user])
+        
+
     return ret
         
 
 """
     Returns the prediction of the rating
     that the user x cuold give to item i
-1
+
     x -> userID
-    esplicit -> esplicit matrix of all the users
-        rows -> users
-        cols -> items
+    esplicit -> esplicit dictionary of all the users
+        esplicit[user][item] = rating from that user to that item
+        if present
     implicit -> implicit data
     i -> itemID
     k -> number of users to return
@@ -109,12 +171,12 @@ def sum_vectors(v1, v2, a, b):
     esplicit and implicit ratings 
 """
 def prediction(x,esplicit,implicit,i,k,a,b):
-    if(calculated_esplicit_vectors.get(x) == None):
-        calculated_esplicit_vectors[x] = most_similar_users(x,esplicit, True)
-        calculated_implicit_vectors[x] = most_similar_users(x,implicit, False)
+    if(calculated_esplicit_dict.get(x) == None):
+        calculated_esplicit_dict[x] = most_similar_users(x,esplicit, True)
+        calculated_implicit_dict[x] = most_similar_users(x,implicit, False)
 
-    esplicit_implicti_sim = sum_vectors(calculated_esplicit_vectors[x],
-                                        calculated_implicit_vectors[x],
+    esplicit_implicti_sim = sum_vectors(calculated_esplicit_dict[x],
+                                        calculated_implicit_dict[x],
                                         a,b)
 
     esplicit_implicti_sim = np.array(esplicit_implicti_sim) 
@@ -148,28 +210,31 @@ def prediction(x,esplicit,implicit,i,k,a,b):
 
 if __name__ == "__main__":
     
-    matrix_esplicit = [
-        [1,2,3,0],
-        [1,0,3,1],
-        [0,0,1,3],
-        [0,1,5,2],
-        [0,1,4,2],
-        [1,4,2,5],
-        [1,2,0,0]
-    ]
+    dict_esplicit = {
+        0 : {0:1, 1:2, 2:3     },
+        1 : {0:1,      2:3, 3:1}, 
+        2 : {          2:1, 3:3},   
+        3 : {     1:1, 2:5, 3:2},   
+        4 : {     1:1, 2:4, 3:2},   
+        5 : {0:1, 1:4, 2:2, 3:5},   
+        6 : {0:1, 1:2          }
+    }
 
-    matrix_implicit = [
-        [1,0,0,0],
-        [1,0,1,1],
-        [0,0,0,1],
-        [0,1,0,1],
-        [0,1,1,0],
-        [1,0,1,1],
-        [1,1,0,1]
-    ]
+    dict_implicit = {
+        0 : {0:1               },
+        1 : {0:1,      2:1, 3:1}, 
+        2 : {               3:1},   
+        3 : {     1:1,      3:1},   
+        4 : {     1:1, 2:1,    },   
+        5 : {0:1,      2:1, 3:1},   
+        6 : {0:1, 1:1,      3:1}
+    }
 
-    prediction(4, matrix_esplicit, matrix_implicit, 2, 2, 0.9,0.1)
+    prediction(4, dict_esplicit, dict_implicit, 2, 2, 0.9,0.1)
     
+    
+
+
 
 
 
