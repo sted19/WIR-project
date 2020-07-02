@@ -1,10 +1,13 @@
 
+import correlation_coefficent_thread 
+import multiprocessing
 import numpy as np
 import math
 
 calculated_esplicit_dict = {}
 calculated_implicit_dict = {}
 
+CORES = 4#multiprocessing.cpu_count()
 
 """
     Calculates the average value of the 
@@ -119,17 +122,38 @@ def most_similar_users (x,d, esplicit):
 
     dict_sim = {}
 
-    for user in d.keys():
-        if(x == user):
-            continue
-        
-        user_dict = d.get(user)
-        if(user_dict == None):
-            print("This should never happen: correlation_coefficent.py -> most_similar_users()")
-            continue
+    users = list(d.keys()) 
 
-        sim_x_user = correlation_coefficent(x_dict, user_dict, esplicit)
-        dict_sim[user] = sim_x_user
+    user_index = 0
+    while(user_index < len(users)):
+        
+        threads = []
+
+        for i in range(0,CORES):
+            
+            if(user_index + i == len(users)):
+                break
+
+            user = users[user_index + i]
+            
+            if(x == user):
+                continue
+                
+            user_dict = d.get(user)
+            if(user_dict == None):
+                print("This should never happen: correlation_coefficent.py -> most_similar_users()")
+                continue
+            
+            th = correlation_coefficent_thread.CorrelationCoefficentThread(x_dict, user_dict, user, esplicit)
+            th.start()
+            threads.append(th)
+        
+        for i in range(len(threads)):
+            threads[i].join()
+            res_i = threads[i].get_res()
+            dict_sim[res_i[0]] =  res_i[1]            
+
+        user_index += CORES
     
     return dict_sim
 
