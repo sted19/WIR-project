@@ -1,5 +1,6 @@
 
 import correlation_coefficent_thread 
+import load_files as load
 import multiprocessing
 import numpy as np
 import math
@@ -7,7 +8,7 @@ import math
 calculated_esplicit_dict = {}
 calculated_implicit_dict = {}
 
-CORES = 4#multiprocessing.cpu_count()
+CORES = multiprocessing.cpu_count()
 
 """
     Calculates the average value of the 
@@ -95,6 +96,9 @@ def correlation_coefficent(a,b, esplicit):
 
     a_scaled_norm = norm(a_scaled)
     b_scaled_norm = norm(b_scaled)
+
+    if(a_scaled_norm == 0 or b_scaled_norm == 0):
+        return 0
 
     sim = inner_product(a_scaled,b_scaled)/(a_scaled_norm*b_scaled_norm)
 
@@ -194,7 +198,7 @@ def sum_vectors(d1, d2, a, b):
     a and b coefficent to weight 
     esplicit and implicit ratings 
 """
-def prediction(x,esplicit,implicit,i,k,a,b):
+def prediction_with_implicit(x,esplicit,implicit,i,k,a,b):
     if(calculated_esplicit_dict.get(x) == None):
         calculated_esplicit_dict[x] = most_similar_users(x,esplicit, True)
         calculated_implicit_dict[x] = most_similar_users(x,implicit, False)
@@ -202,12 +206,67 @@ def prediction(x,esplicit,implicit,i,k,a,b):
     esplicit_implicti_sim = sum_vectors(calculated_esplicit_dict[x],
                                         calculated_implicit_dict[x],
                                         a,b)
+    prediction(esplicit_implicti_sim, esplicit, i, k)
 
-    esplicit_implicti_sim = np.array(esplicit_implicti_sim) 
 
-    sorted = np.flip(esplicit_implicti_sim[np.argsort(esplicit_implicti_sim[:,0])])   
 
-    print(sorted)
+
+"""
+    transforms d into an array with the
+    following shape 
+        [[sim, user]]
+"""
+def turn_dictionary_into_array_couples(d):
+    ret = []
+    users = set(d.keys()) 
+
+    for user in users: 
+        ret.append([d[user], user])
+        
+    return ret
+
+
+"""
+    Returns the prediction of the rating
+    that the user x cuold give to item i
+
+    x -> userID
+    esplicit -> esplicit dictionary of all the users
+        esplicit[user][item] = rating from that user to that item
+        if present
+    i -> itemID
+    k -> number of users to return
+"""
+def prediction_without_implicit(x,esplicit,i,k):
+    if(calculated_esplicit_dict.get(x) == None):
+        calculated_esplicit_dict[x] = most_similar_users(x,esplicit, True)
+
+    #print(calculated_esplicit_dict[x])
+
+    sim = turn_dictionary_into_array_couples(calculated_esplicit_dict[x])
+    prediction(sim, esplicit, i, k)
+
+
+"""
+    reutrns the predicted rating
+    from a user (to which is associated 
+    the vector of similarities) to item i 
+
+    sim -> vector of similariies wiht the 
+        following shape: [[sim, user]]
+    esplicit -> esplicit dictionary of all the users
+        esplicit[user][item] = rating from that user 
+        to that item if present
+    implicit -> implicit data
+    i -> itemID
+    k -> number of users to return
+"""
+def prediction(sim,esplicit,i,k):
+    sim = np.array(sim) 
+
+    sorted = np.flip(sim[np.argsort(sim[:,0])])   
+
+    #print(sorted)
    
     denominator = 0
     numerator = 0
@@ -216,11 +275,13 @@ def prediction(x,esplicit,implicit,i,k,a,b):
 
         if(counter == k):
             break
-        user = int(sorted[index][0])
+        user = sorted[index][0]
         
-        sim_user_x = sorted[index][1]
-        rate_user_i = esplicit[user][i]
-        if(rate_user_i != 0):
+        sim_user_x = float(sorted[index][1])
+        if(sim_user_x <= 0):
+            break
+        rate_user_i = esplicit[user].get(i)
+        if(rate_user_i != None):
             counter += 1
             
             denominator += sim_user_x
@@ -234,7 +295,7 @@ def prediction(x,esplicit,implicit,i,k,a,b):
 
 if __name__ == "__main__":
     
-    dict_esplicit = {
+    """ dict_esplicit = {
         0 : {0:1, 1:2, 2:3     },
         1 : {0:1,      2:3, 3:1}, 
         2 : {          2:1, 3:3},   
@@ -254,10 +315,31 @@ if __name__ == "__main__":
         6 : {0:1, 1:1,      3:1}
     }
 
-    prediction(4, dict_esplicit, dict_implicit, 2, 2, 0.9,0.1)
-    
+    prediction_with_implicit(4, dict_esplicit, dict_implicit, 2, 2,0.9,0.1) """
     
 
+    dict_esplicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_user_based.txt')
+
+    float_dict = {}
+
+    for k1 in dict_esplicit.keys():
+        float_dict[k1] = {}
+        for k2 in  dict_esplicit[k1].keys():
+            float_dict[k1][k2] = float(dict_esplicit[k1][k2])
+            
+
+    #k = list(dict_esplicit.keys())[0]
+    #k2 = list(dict_esplicit[k].keys())[0]
+    
+    #print(k) #102408
+    #print(k2) #1371.0
+    
+    #print(dict_esplicit['102408']['1371.0']) #3
+    #print(type(dict_esplicit['102408']['1371.0'])) # str
+    #print(type(float(dict_esplicit['102408']['1371.0']))) # float
+    prediction_without_implicit('102408',float_dict,'1371.0',10)
+    prediction_without_implicit('102408',float_dict,'1371.0',20)
+    prediction_without_implicit('102408',float_dict,'1371.0',50)
 
 
 
