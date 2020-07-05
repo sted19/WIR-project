@@ -2,11 +2,13 @@ from correlation_coefficent import prediction_without_implicit
 from correlation_coefficent import prediction_with_implicit
 import threading
 
+# 
+
 class PredictionThread (threading.Thread):
-    def __init__(self, user_id, esplicit, implicit, implicit_bool, i, k, a, b):
+    def __init__(self, user_id, explicit, implicit, implicit_bool, i, k, a, b):
         threading.Thread.__init__(self)
         self.implicit = implicit 
-        self.esplicit = esplicit
+        self.explicit = explicit
         self.user_id = user_id
         self.i = i
         self.k = k
@@ -18,10 +20,10 @@ class PredictionThread (threading.Thread):
     def run(self):
         if(self.implicit_bool):
             
-            self.result = prediction_with_implicit(self.user_id, self.esplicit, 
+            self.result = prediction_with_implicit(self.user_id, self.explicit, 
                                         self.implicit, self.i, self.k, self.a, self.b)
         else:
-            self.result = prediction_without_implicit(self.user_id, self.esplicit, 
+            self.result = prediction_without_implicit(self.user_id, self.explicit, 
                                                          self.i, self.k)
 
     """

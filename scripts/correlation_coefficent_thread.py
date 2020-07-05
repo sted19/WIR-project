@@ -2,16 +2,16 @@ from correlation_coefficent import correlation_coefficent
 import threading
 
 class CorrelationCoefficentThread (threading.Thread):
-   def __init__(self, x_dict, user_dict, user, esplicit):
+   def __init__(self, x_dict, user_dict, user, explicit):
       threading.Thread.__init__(self)
       self.x_dict = x_dict
       self.user_dict = user_dict
-      self.esplicit = esplicit
+      self.explicit = explicit
       self.user = user
       self.result = None
    
    def run(self):
-      res = correlation_coefficent(self.x_dict, self.user_dict, self.esplicit)
+      res = correlation_coefficent(self.x_dict, self.user_dict, self.explicit)
       self.result = [self.user, res]
 
    """
