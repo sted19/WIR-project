@@ -1,8 +1,5 @@
 from correlation_coefficent import correlation_coefficent
 import threading
-import time
-
-exitFlag = 0
 
 class CorrelationCoefficentThread (threading.Thread):
    def __init__(self, x_dict, user_dict, user, esplicit):

@@ -1,5 +1,4 @@
 
-import correlation_coefficent_thread 
 import load_files as load
 import multiprocessing
 import numpy as np
@@ -7,6 +6,8 @@ import math
 
 calculated_esplicit_dict = {}
 calculated_implicit_dict = {}
+
+cliques = {}
 
 CORES = multiprocessing.cpu_count()
 
@@ -104,6 +105,8 @@ def correlation_coefficent(a,b, esplicit):
 
     return sim
 
+import correlation_coefficent_thread 
+
 """
     Returns the similarity between x 
     and the other users 
@@ -178,7 +181,7 @@ def sum_vectors(d1, d2, a, b):
     for user in users:
         
         summed_sim = d1[user]*a + d2[user]*b
-        ret.append([summed_sim, user])
+        ret.append([summed_sim, int(user)])
         
 
     return ret
@@ -199,14 +202,21 @@ def sum_vectors(d1, d2, a, b):
     esplicit and implicit ratings 
 """
 def prediction_with_implicit(x,esplicit,implicit,i,k,a,b):
-    if(calculated_esplicit_dict.get(x) == None):
-        calculated_esplicit_dict[x] = most_similar_users(x,esplicit, True)
-        calculated_implicit_dict[x] = most_similar_users(x,implicit, False)
+    clique = cliques.get(x)
+    if(clique is None):
+        esplicit_scores = most_similar_users(x,esplicit, True)
+        implicit_scores = most_similar_users(x,implicit, False)
 
-    esplicit_implicti_sim = sum_vectors(calculated_esplicit_dict[x],
-                                        calculated_implicit_dict[x],
-                                        a,b)
-    prediction(esplicit_implicti_sim, esplicit, i, k)
+        esplicit_implicti_sim = sum_vectors(esplicit_scores,
+                                            implicit_scores,
+                                            a,b)
+        esplicit_implicti_sim = np.array(esplicit_implicti_sim) 
+
+        sorted = (np.flip(esplicit_implicti_sim[np.argsort(esplicit_implicti_sim[:,0])]))[:100]                                       
+
+        cliques[x] = sorted
+
+    return prediction(cliques[x], esplicit, i)
 
 
 
@@ -221,7 +231,7 @@ def turn_dictionary_into_array_couples(d):
     users = set(d.keys()) 
 
     for user in users: 
-        ret.append([d[user], user])
+        ret.append((d[user], int(user)))
         
     return ret
 
@@ -238,13 +248,32 @@ def turn_dictionary_into_array_couples(d):
     k -> number of users to return
 """
 def prediction_without_implicit(x,esplicit,i,k):
-    if(calculated_esplicit_dict.get(x) == None):
-        calculated_esplicit_dict[x] = most_similar_users(x,esplicit, True)
+    clique = cliques.get(x)
+    if(clique is None):
+        
+        scores = most_similar_users(x,esplicit, True)
 
-    #print(calculated_esplicit_dict[x])
+        sim = turn_dictionary_into_array_couples(scores)
+        
+        print(type(sim[0][0]))
+        print(type(sim[0][1]))
 
-    sim = turn_dictionary_into_array_couples(calculated_esplicit_dict[x])
-    prediction(sim, esplicit, i, k)
+        sim  = np.array(sim) 
+        print(type(sim[0][0]))
+        print(type(sim[0][1]))
+
+        sim = sim[np.argsort(sim[:,0])]
+        print('clique not flipped ->')
+        print(sim)
+        
+        sim = (np.flip(sim))[:100]                                       
+
+        cliques[x] = sim
+
+        print('clique flipped ->')
+        print(sim)
+
+    return prediction(cliques[x], esplicit, i)
 
 
 """
@@ -261,36 +290,34 @@ def prediction_without_implicit(x,esplicit,i,k):
     i -> itemID
     k -> number of users to return
 """
-def prediction(sim,esplicit,i,k):
-    sim = np.array(sim) 
+def prediction(clique,esplicit,i): 
 
-    sorted = np.flip(sim[np.argsort(sim[:,0])])   
-
-    #print(sorted)
-   
     denominator = 0
     numerator = 0
-    counter = 0
-    for index in range(0, len(sorted)):
+    for index in range(0, len(clique)):
 
-        if(counter == k):
-            break
-        user = sorted[index][0]
+        user = str(int(clique[index][0]))
         
-        sim_user_x = float(sorted[index][1])
+        sim_user_x = float(clique[index][1])
+        
         if(sim_user_x <= 0):
+            print('break at {}'.format(index))
             break
         rate_user_i = esplicit[user].get(i)
-        if(rate_user_i != None):
-            counter += 1
-            
+        
+        if(rate_user_i != None):   
+            print('not None')     
             denominator += sim_user_x
             numerator += sim_user_x * rate_user_i
     
+    if denominator == 0:
+        return 0    #TODO define what to do in the case in which no 
+                    #positive user has given a score to that item
+                    #we could also retrieve the avg of the scores
+                    #of the user
     prediction = numerator/denominator
-    
-    print(prediction)
 
+    print('non merda')
     return prediction
 
 if __name__ == "__main__":
@@ -315,10 +342,10 @@ if __name__ == "__main__":
         6 : {0:1, 1:1,      3:1}
     }
 
-    prediction_with_implicit(4, dict_esplicit, dict_implicit, 2, 2,0.9,0.1) """
+    prediction_with_implicit(4, dict_esplicit, dict_implicit, 2, 2,0.9,0.1)  """
     
 
-    dict_esplicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_user_based.txt')
+    dict_esplicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_item_based.txt')
 
     float_dict = {}
 
@@ -328,18 +355,17 @@ if __name__ == "__main__":
             float_dict[k1][k2] = float(dict_esplicit[k1][k2])
             
 
-    #k = list(dict_esplicit.keys())[0]
-    #k2 = list(dict_esplicit[k].keys())[0]
+    k = list(dict_esplicit.keys())[0]
+    k2 = list(dict_esplicit[k].keys())[0]
     
-    #print(k) #102408
-    #print(k2) #1371.0
+    #print(k) #user -> 102408       item -> 4031
+    #print(k2) #user -> 1371.0      item -> 36526.0
     
-    #print(dict_esplicit['102408']['1371.0']) #3
-    #print(type(dict_esplicit['102408']['1371.0'])) # str
-    #print(type(float(dict_esplicit['102408']['1371.0']))) # float
-    prediction_without_implicit('102408',float_dict,'1371.0',10)
-    prediction_without_implicit('102408',float_dict,'1371.0',20)
-    prediction_without_implicit('102408',float_dict,'1371.0',50)
+    #print(dict_esplicit['4031']['36526.0']) #user -> 3     item -> 2,5
+
+    prediction_without_implicit('4031',float_dict,'36526.0',100)
+    prediction_without_implicit('4031',float_dict,'36526.0',200)
+    prediction_without_implicit('4031',float_dict,'36526.0',500)
 
 
 
