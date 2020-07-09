@@ -14,3 +14,7 @@ implicit_dict_path_books = os.path.join(books_path,'Implicit.csv')
 num_folds = 4
 
 CORES = multiprocessing.cpu_count()
+
+seed = 2
+
+a = 0.95

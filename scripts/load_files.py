@@ -1,9 +1,14 @@
-from random import randint
+import numpy as np
 import json
+from constants import *
+np.random.seed(seed)
 
 
 def add_element(d, user_id, item_id, rating, item_based):
     
+    if(rating == 0): #cause only in the case of implicit values the rating can be 0
+        rating = 1 
+
     user_id_ = ''
     item_id_ = ''
 
@@ -27,8 +32,9 @@ def add_element(d, user_id, item_id, rating, item_based):
     if(item_based):
         if(d.get(item_id_) == None):
             d[item_id_] = {}
-    
+
         d[item_id_][user_id_] = float(rating)
+
     else:
         if(d.get(user_id_) == None):
             d[user_id_] = {}
@@ -77,20 +83,21 @@ def s_load(file_name):
     the return is [{key1:{key2:rating}}]
 """
 def divide_dataset(dataset, num_folds):
-    folds = [{}]*num_folds
+    folds = []
+    for i in range(num_folds):
+        folds.append({})
 
     for key1 in dataset.keys():
         for key2 in dataset[key1].keys():
-            rand_index = randint(0,num_folds-1)
-            
+            rand_index = int(np.random.randint(num_folds))
             tmp_dict = folds[rand_index]
 
             if(tmp_dict.get(key1) == None):
                 tmp_dict[key1] = {}
             
             tmp_dict[key1][key2] = dataset[key1][key2]
-
-    return folds       
+    
+    return folds    
 
 """
     Returns a dictionary that is the union
@@ -113,36 +120,13 @@ def merge_dicts(dicts):
     return ret
     
 from datetime import datetime
+from constants import *
+
 if __name__ == "__main__":
-    #(implicit, esplicit) = l_load('/home/francesco/Desktop/WIR-project/Datasets/BX-CSV-Dump/item_based_implicit.csv', True)
-    #print(implicit)
+    explicit_user_based_utility = l_load(explicit_dict_path_books, False)
+    folds = divide_dataset(explicit_user_based_utility, 4)
 
-    data = s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_user_based2.txt')
-
-    now = datetime.now()
-
-
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
-    print("start divide")
-
-    dicts = divide_dict_into_k(data, 4)
-
-    now = datetime.now()
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
-    print("start merge")
-
-    dicts1 = dicts[:3]
-
-    res = merge_dicts(dicts1)
-
-    now = datetime.now()
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
-    print("end 1 merge")
-
-    """ for i in range(0,4):
-        json.dump(dicts[i], open('/home/francesco/{}.json'.format(i), 'w')) """
-
-    pass
+    for key in folds[0].keys():
+        for key2 in folds[0][key].keys():
+            if(folds[0][key][key2] != folds[1][key][key2] or folds[0][key][key2] != folds[2][key][key2]) or folds[0][key][key2] != folds[3][key][key2]:
+                print('diversi')

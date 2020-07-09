@@ -4,8 +4,8 @@ import multiprocessing
 import numpy as np
 import math
 
-calculated_esplicit_dict = {}
-calculated_implicit_dict = {}
+explicit_sims = {}
+implicit_sims = {}
 
 cliques = {}
 
@@ -78,16 +78,16 @@ def inner_product(a,b):
     
     a, b dictionaries of non zero values
 
-    esplicit -> boolean value that  defines if we
+    explicit -> boolean value that  defines if we
     need to scale or not cause in the case of implicit
     we do not need to scale
 """
-def compute_correlation_coefficent(a,b, esplicit):
+def compute_correlation_coefficent(a,b, explicit):
 
     a_scaled = a
     b_scaled = b
 
-    if(esplicit):
+    if(explicit):
 
         avg_a = avg(a)
         avg_b = avg(b)
@@ -185,63 +185,75 @@ def sum_vectors(v1, v2, a, b):
         summed_sim = v1[idx][1]*a + v2[idx][1]*b
         ret.append([v1[idx][0], summed_sim])
         
-    print(ret)
     return ret
 
-def compute_clique_with_implicit(user, esplicit_utility_matrix, implicit_utility_matrix, clique_size, a, b):
+def compute_clique_with_implicit(user, explicit_utility_matrix, implicit_utility_matrix, clique_size, a, b, users=None, new_test_fold=True):
 
-    unique_users = list(set(esplicit_utility_matrix.keys()))
-    user_dict = esplicit_utility_matrix[user]
-    partitions = make_partitions(CORES,unique_users)    
+    if(explicit_sims.get(user) == None or new_test_fold):
+
+        if(users == None):
+            unique_users = list(set(explicit_utility_matrix.keys()))
+        else:
+            unique_users = list(users)
+        user_dict = explicit_utility_matrix[user]
+        partitions = make_partitions(CORES,unique_users)    
+            
+        #print('======= start creating explicit threads =======')
+
+        threads = []
+        for idx in range(CORES):
+            name = "Thread-{}".format(idx)
+            thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
+                                                    user_dict = user_dict, 
+                                                    user_ids = partitions[idx], 
+                                                    utility_matrix = explicit_utility_matrix,
+                                                    is_explicit = True)
+            threads.append(thread)
         
-    print('======= start creating esplicit threads =======')
+        [thread.start() for thread in threads]    
+        #print('======= all explicit threads started =======')
 
-    threads = []
-    for idx in range(CORES):
-        name = "Thread-{}".format(idx)
-        thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
-                                                user_dict = user_dict, 
-                                                user_ids = partitions[idx], 
-                                                utility_matrix = esplicit_utility_matrix,
-                                                is_explicit = True)
-        threads.append(thread)
-    
-    [thread.start() for thread in threads]    
-    print('======= all esplicit threads started =======')
+        results = [thread.join() for thread in threads]
+        #print('======= all explicit threads joined =======')
+        
+        explicit_similarities = []
+        for elem in results:
+            for similarity in elem:
+                explicit_similarities.append(similarity)
+        
+        #print('======= start creating implicit threads =======')
 
-    results = [thread.join() for thread in threads]
-    print('======= all esplicit threads joined =======')
-    
-    esplicit_similarities = []
-    for elem in results:
-        for similarity in elem:
-            esplicit_similarities.append(similarity)
-    
-    print('======= start creating implicit threads =======')
+        user_dict = implicit_utility_matrix.get(user)
+        if(user_dict == None):
+            user_dict = {}
+        threads = []
+        for idx in range(CORES):
+            name = "Thread-{}".format(idx+CORES)
+            thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
+                                                    user_dict = user_dict, 
+                                                    user_ids = partitions[idx], 
+                                                    utility_matrix = implicit_utility_matrix,
+                                                    is_explicit = False)
+            threads.append(thread)
+        
+        [thread.start() for thread in threads]    
+        #print('======= all implicit threads started =======')
 
-    user_dict = implicit_utility_matrix[user]
-    threads = []
-    for idx in range(CORES):
-        name = "Thread-{}".format(idx+CORES)
-        thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
-                                                user_dict = user_dict, 
-                                                user_ids = partitions[idx], 
-                                                utility_matrix = implicit_utility_matrix,
-                                                is_explicit = False)
-        threads.append(thread)
-    
-    [thread.start() for thread in threads]    
-    print('======= all implicit threads started =======')
+        results = [thread.join() for thread in threads]
+        #print('======= all implicit threads joined =======')
+        
+        implicit_similarities = []
+        for elem in results:
+            for similarity in elem:
+                implicit_similarities.append(similarity)
 
-    results = [thread.join() for thread in threads]
-    print('======= all implicit threads joined =======')
-    
-    implicit_similarities = []
-    for elem in results:
-        for similarity in elem:
-            implicit_similarities.append(similarity)
+        explicit_sims[user] = explicit_similarities
+        implicit_sims[user] = implicit_similarities
 
-    similarities = sum_vectors(esplicit_similarities, implicit_similarities, a, b)
+    implicit_similarities = implicit_sims[user]
+    explicit_similarities = explicit_sims[user]
+
+    similarities = sum_vectors(explicit_similarities, implicit_similarities, a, b)
 
     similarities = np.array(similarities)
     clique = similarities[np.argsort(similarities[:,1])[::-1]][1:clique_size+1]
@@ -251,8 +263,8 @@ def compute_clique_with_implicit(user, esplicit_utility_matrix, implicit_utility
 
 
 if __name__ == "__main__":
-    
-    """ dict_esplicit = {
+    pass
+    """ dict_explicit = {
         0 : {0:1, 1:2, 2:3     },
         1 : {0:1,      2:3, 3:1}, 
         2 : {          2:1, 3:3},   
@@ -272,21 +284,21 @@ if __name__ == "__main__":
         6 : {0:1, 1:1,      3:1}
     }
 
-    prediction_with_implicit(4, dict_esplicit, dict_implicit, 2, 2,0.9,0.1)  """
+    prediction_with_implicit(4, dict_explicit, dict_implicit, 2, 2,0.9,0.1)  """
     
 
-    #dict_esplicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_item_based.txt')
+    #dict_explicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_item_based.txt')
 
-    float_dict = {}
+    """ float_dict = {}
 
-    for k1 in dict_esplicit.keys():
+    for k1 in dict_explicit.keys():
         float_dict[k1] = {}
-        for k2 in  dict_esplicit[k1].keys():
-            float_dict[k1][k2] = float(dict_esplicit[k1][k2])
+        for k2 in  dict_explicit[k1].keys():
+            float_dict[k1][k2] = float(dict_explicit[k1][k2])
             
 
-    k = list(dict_esplicit.keys())[0]
-    k2 = list(dict_esplicit[k].keys())[0]
+    k = list(dict_explicit.keys())[0]
+    k2 = list(dict_explicit[k].keys())[0] """
     
     
 

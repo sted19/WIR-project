@@ -21,16 +21,22 @@ class ComputeCorrelationCoefficentThread (threading.Thread):
    def run(self):
       if self.name == None:
          raise Exception('Something bad happened, thread has no name')
-      print('Thread {} started'.format(self.name))
+      #print('Thread {} started'.format(self.name))
       self.compute_similarities()
 
    
    def compute_similarities(self):
       similarities = []
       for user in self.user_ids:
-         tmp_user_dict = self.utility_matrix[user]
-         similarity = compute_correlation_coefficent(self.user_dict, tmp_user_dict, self.is_explicit)
-         similarities.append([user,similarity])
+         if(self.utility_matrix.get(user) == None): #cause the set of users to which I do the similarity comes 
+                                                    #from the set of users in the explicit dictionary so some one could
+                                                    #not appear in the implicit dictionary: If user does not appear -> no
+                                                    #implicit rating -> similarity = 0
+            similarities.append([user,0])
+         else:
+            tmp_user_dict = self.utility_matrix[user]
+            similarity = compute_correlation_coefficent(self.user_dict, tmp_user_dict, self.is_explicit)
+            similarities.append([user,similarity])
       
       self.result = similarities
 
