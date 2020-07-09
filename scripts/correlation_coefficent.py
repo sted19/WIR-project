@@ -82,7 +82,7 @@ def inner_product(a,b):
     need to scale or not cause in the case of implicit
     we do not need to scale
 """
-def correlation_coefficent(a,b, esplicit):
+def compute_correlation_coefficent(a,b, esplicit):
 
     a_scaled = a
     b_scaled = b
@@ -107,218 +107,148 @@ def correlation_coefficent(a,b, esplicit):
 
 import correlation_coefficent_thread 
 
-"""
-    Returns the similarity between x 
-    and the other users 
-    
-    x -> userID
-    d -> dictionary of all the users
-        d[user][item] -> rating from user for that item
-        if it exists
-    
-    esplicit -> boolean value that  defines if we
-    need to scale or not cause in the case of implicit
-    we do not need to scale
 
 """
-def most_similar_users (x,d, esplicit):
+    returns a list containing num_folds lists 
+    that are a partition of data
 
-    x_dict = d.get(x)
-    if(x_dict == None):
-        raise Exception("x has to be a real user")
+    data -> list
+    num_folds -> number of partitions 
+"""
+def make_partitions(num_folds, data):
+    data_size = len(data)
+    fold_size = data_size // num_folds
+    partitions = []
+    for idx in range(num_folds-1):
+        partitions.append(data[idx*fold_size:(idx+1)*fold_size])
+    partitions.append(data[idx*fold_size:])
+    return partitions
 
-    dict_sim = {}
+"""
+    Returns the clique of the user as np.array
 
-    users = list(d.keys()) 
+    user -> userID
+    utility_matrix -> {user:{item:rating}}
+    clique_size -> size of the clique of the user
+"""
+import correlation_coefficent_thread 
+def compute_clique_without_implicit(user, utility_matrix, clique_size):
 
-    user_index = 0
-    while(user_index < len(users)):
+    unique_users = list(set(utility_matrix.keys()))
+    user_dict = utility_matrix[user]
+    partitions = make_partitions(CORES,unique_users)    
         
-        threads = []
 
-        for i in range(0,CORES):
-            
-            if(user_index + i == len(users)):
-                break
+    threads = []
+    for idx in range(CORES):
+        name = "Thread-{}".format(idx)
+        thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
+                                                user_dict = user_dict, 
+                                                user_ids = partitions[idx], 
+                                                utility_matrix = utility_matrix, 
+                                                is_explicit = True)
+        threads.append(thread)
 
-            user = users[user_index + i]
-            
-            if(x == user):
-                continue
-                
-            user_dict = d.get(user)
-            if(user_dict == None):
-                print("This should never happen: correlation_coefficent.py -> most_similar_users()")
-                continue
-            
-            th = correlation_coefficent_thread.CorrelationCoefficentThread(x_dict, user_dict, user, esplicit)
-            th.start()
-            threads.append(th)
-        
-        for i in range(len(threads)):
-            threads[i].join()
-            res_i = threads[i].get_res()
-            dict_sim[res_i[0]] =  res_i[1]            
-
-        user_index += CORES
     
-    return dict_sim
+    [thread.start() for thread in threads]    
+    print('======= all threads started =======')
+
+    results = [thread.join() for thread in threads]
+    print('======= all threads joined =======')
+    
+    similarities = []
+    for elem in results:
+        for similarity in elem:
+            similarities.append(similarity)
+    
+    similarities = np.array(similarities)
+    clique = similarities[np.argsort(similarities[:,1])[::-1]][1:clique_size+1]
+
+    return clique
 
 """
-    weighted sum of scores 
-    d1 and d2 dictionries
+    weighted sum of scores of v1 and v2    
+
+    v1 -> list [[ID, score]]
+    v2 -> list [[ID, score]] 
 
     a, b weights
 """
-def sum_vectors(d1, d2, a, b):
+def sum_vectors(v1, v2, a, b):
     ret = []
 
-    users_1 = set(d1.keys())
-    users_2 = set(d2.keys())
-
-    users = users_1.union(users_2) 
-
-    for user in users:
+    for idx in range(len(v1)):
+        if(v1[idx][0]!=v2[idx][0]):
+            print('The two vectors has to have the same order of users!\nIf you see this message than you should change the return of ComputeCorrelationCoefficentThread.join() into a dictionary so that I can access the implicit and explicit scores for the same user with a small cost')
+            raise Exception('The two vectors must have the same order of users!')
         
-        summed_sim = d1[user]*a + d2[user]*b
-        ret.append([summed_sim, int(user)])
+        summed_sim = v1[idx][1]*a + v2[idx][1]*b
+        ret.append([v1[idx][0], summed_sim])
         
-
-    return ret
-        
-
-"""
-    Returns the prediction of the rating
-    that the user x cuold give to item i
-
-    x -> userID
-    esplicit -> esplicit dictionary of all the users
-        esplicit[user][item] = rating from that user to that item
-        if present
-    implicit -> implicit data
-    i -> itemID
-    k -> number of users to return
-    a and b coefficent to weight 
-    esplicit and implicit ratings 
-"""
-def prediction_with_implicit(x,esplicit,implicit,i,k,a,b):
-    clique = cliques.get(x)
-    if(clique is None):
-        esplicit_scores = most_similar_users(x,esplicit, True)
-        implicit_scores = most_similar_users(x,implicit, False)
-
-        esplicit_implicti_sim = sum_vectors(esplicit_scores,
-                                            implicit_scores,
-                                            a,b)
-        esplicit_implicti_sim = np.array(esplicit_implicti_sim) 
-
-        sorted = (np.flip(esplicit_implicti_sim[np.argsort(esplicit_implicti_sim[:,0])]))[:100]                                       
-
-        cliques[x] = sorted
-
-    return prediction(cliques[x], esplicit, i)
-
-
-
-
-"""
-    transforms d into an array with the
-    following shape 
-        [[sim, user]]
-"""
-def turn_dictionary_into_array_couples(d):
-    ret = []
-    users = set(d.keys()) 
-
-    for user in users: 
-        ret.append((d[user], int(user)))
-        
+    print(ret)
     return ret
 
+def compute_clique_with_implicit(user, esplicit_utility_matrix, implicit_utility_matrix, clique_size, a, b):
 
-"""
-    Returns the prediction of the rating
-    that the user x cuold give to item i
-
-    x -> userID
-    esplicit -> esplicit dictionary of all the users
-        esplicit[user][item] = rating from that user to that item
-        if present
-    i -> itemID
-    k -> number of users to return
-"""
-def prediction_without_implicit(x,esplicit,i,k):
-    clique = cliques.get(x)
-    if(clique is None):
+    unique_users = list(set(esplicit_utility_matrix.keys()))
+    user_dict = esplicit_utility_matrix[user]
+    partitions = make_partitions(CORES,unique_users)    
         
-        scores = most_similar_users(x,esplicit, True)
+    print('======= start creating esplicit threads =======')
 
-        sim = turn_dictionary_into_array_couples(scores)
-        
-        print(type(sim[0][0]))
-        print(type(sim[0][1]))
-
-        sim  = np.array(sim) 
-        print(type(sim[0][0]))
-        print(type(sim[0][1]))
-
-        sim = sim[np.argsort(sim[:,0])]
-        print('clique not flipped ->')
-        print(sim)
-        
-        sim = (np.flip(sim))[:100]                                       
-
-        cliques[x] = sim
-
-        print('clique flipped ->')
-        print(sim)
-
-    return prediction(cliques[x], esplicit, i)
-
-
-"""
-    reutrns the predicted rating
-    from a user (to which is associated 
-    the vector of similarities) to item i 
-
-    sim -> vector of similariies wiht the 
-        following shape: [[sim, user]]
-    esplicit -> esplicit dictionary of all the users
-        esplicit[user][item] = rating from that user 
-        to that item if present
-    implicit -> implicit data
-    i -> itemID
-    k -> number of users to return
-"""
-def prediction(clique,esplicit,i): 
-
-    denominator = 0
-    numerator = 0
-    for index in range(0, len(clique)):
-
-        user = str(int(clique[index][0]))
-        
-        sim_user_x = float(clique[index][1])
-        
-        if(sim_user_x <= 0):
-            print('break at {}'.format(index))
-            break
-        rate_user_i = esplicit[user].get(i)
-        
-        if(rate_user_i != None):   
-            print('not None')     
-            denominator += sim_user_x
-            numerator += sim_user_x * rate_user_i
+    threads = []
+    for idx in range(CORES):
+        name = "Thread-{}".format(idx)
+        thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
+                                                user_dict = user_dict, 
+                                                user_ids = partitions[idx], 
+                                                utility_matrix = esplicit_utility_matrix,
+                                                is_explicit = True)
+        threads.append(thread)
     
-    if denominator == 0:
-        return 0    #TODO define what to do in the case in which no 
-                    #positive user has given a score to that item
-                    #we could also retrieve the avg of the scores
-                    #of the user
-    prediction = numerator/denominator
+    [thread.start() for thread in threads]    
+    print('======= all esplicit threads started =======')
 
-    print('non merda')
-    return prediction
+    results = [thread.join() for thread in threads]
+    print('======= all esplicit threads joined =======')
+    
+    esplicit_similarities = []
+    for elem in results:
+        for similarity in elem:
+            esplicit_similarities.append(similarity)
+    
+    print('======= start creating implicit threads =======')
+
+    user_dict = implicit_utility_matrix[user]
+    threads = []
+    for idx in range(CORES):
+        name = "Thread-{}".format(idx+CORES)
+        thread = correlation_coefficent_thread.ComputeCorrelationCoefficentThread(name = name, 
+                                                user_dict = user_dict, 
+                                                user_ids = partitions[idx], 
+                                                utility_matrix = implicit_utility_matrix,
+                                                is_explicit = False)
+        threads.append(thread)
+    
+    [thread.start() for thread in threads]    
+    print('======= all implicit threads started =======')
+
+    results = [thread.join() for thread in threads]
+    print('======= all implicit threads joined =======')
+    
+    implicit_similarities = []
+    for elem in results:
+        for similarity in elem:
+            implicit_similarities.append(similarity)
+
+    similarities = sum_vectors(esplicit_similarities, implicit_similarities, a, b)
+
+    similarities = np.array(similarities)
+    clique = similarities[np.argsort(similarities[:,1])[::-1]][1:clique_size+1]
+
+    return clique
+
+
 
 if __name__ == "__main__":
     
@@ -345,7 +275,7 @@ if __name__ == "__main__":
     prediction_with_implicit(4, dict_esplicit, dict_implicit, 2, 2,0.9,0.1)  """
     
 
-    dict_esplicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_item_based.txt')
+    #dict_esplicit = load.s_load('/home/francesco/Desktop/WIR-project/Datasets/movies_dataset/utility_matrix_item_based.txt')
 
     float_dict = {}
 
@@ -358,14 +288,7 @@ if __name__ == "__main__":
     k = list(dict_esplicit.keys())[0]
     k2 = list(dict_esplicit[k].keys())[0]
     
-    #print(k) #user -> 102408       item -> 4031
-    #print(k2) #user -> 1371.0      item -> 36526.0
     
-    #print(dict_esplicit['4031']['36526.0']) #user -> 3     item -> 2,5
-
-    prediction_without_implicit('4031',float_dict,'36526.0',100)
-    prediction_without_implicit('4031',float_dict,'36526.0',200)
-    prediction_without_implicit('4031',float_dict,'36526.0',500)
 
 
 

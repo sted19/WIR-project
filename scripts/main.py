@@ -1,18 +1,12 @@
-from load_files import divide_dict_into_k
+from load_files import divide_dataset
 from load_files import merge_dicts
-from load_files import s_load
+from load_files import l_load
 import correlation_coefficent 
-import prediction_thread
 import multiprocessing
 import os
 import numpy as np
 
-movies_path = os.path.join(os.path.join(os.getcwd(),'Datasets'),'movies_dataset')
-
-user_based_dict_path = os.path.join(movies_path,'utility_matrix_user_based.txt')
-item_based_dict_path = os.path.join(movies_path,'utility_matrix_item_based.txt')
-
-CORES = multiprocessing.cpu_count()
+from constants import *
 
 """
     returns a value that represents
@@ -31,86 +25,63 @@ def book_distance(book1, book2, book_data):
     return len(class1) + len(class2) - 2*last_common 
 
     
+"""
+    returns the predicted rating given a user and an item
+
+    user -> userID
+    item -> itemID
+    clique -> list of users that are similar to userID
+"""
+
+def predict(user, item, clique, utility_matrix):
+    numerator = 0
+    denominator = 0
+    for elem in clique:
+        neighbor = elem[0]
+        similarity = elem[1]
+
+        neigh_dict = utility_matrix[neighbor]
+        rating = neigh_dict.get(item)
+        
+        if  rating == None:
+            continue
+
+        numerator += rating*similarity
+        denominator += similarity
     
+    if denominator == 0:
+        print('denominator is 0, no user in the clique rated this item')
+        return -1
+    
+    return numerator/denominator
 
 
 
 """
     returns the K items with higher score for 
     the user 
-"""
-def top_k_without_implicit(user, dict_explicit, set_of_items, k):
-    float_dict = {}
-    predicted = []
-    for k1 in dict_explicit.keys():
-        float_dict[k1] = {}
-        for k2 in  dict_explicit[k1].keys():
-            float_dict[k1][k2] = float(dict_explicit[k1][k2])
-    
-    items = list(set_of_items.difference(set(dict_explicit[user].keys())))
+""" 
 
-    predicted.append([correlation_coefficent.prediction_without_implicit(user,float_dict,items[0],k), items[0]])
-
-    user_index = 1
-    while(user_index < len(items)):
-        threads = []
-        
-        for i in range(0,CORES):
-            
-                
-            if(user_index + i == len(items)):
-                break
-            
-            th = prediction_thread.PredictionThread(user, dict_explicit, {}, False, items[user_index + i], k, 0, 0)
-            th.start()
-            threads.append(th)
-        
-        for th in threads:
-            th.join()
-            res_i = th.get_res()
-            predicted.append([res_i, th.get_item()]) 
-
-        user_index += CORES
-
-    predicted = np.array(predicted) 
-
-    sorted_predictions = np.flip(predicted[np.argsort(predicted[:,0])])
-
-    print('sorted_predictions->')
-    print(sorted_predictions)
-
-    return sorted_predictions[:10]
-
-from datetime import datetime
 if __name__ == "__main__":
+    explicit_user_based_utility = l_load(explicit_dict_path_books, False)
+    implicit_user_based_utility = l_load(implicit_dict_path_books, False)
 
-    
+    folds_explicit = divide_dataset(explicit_user_based_utility, num_folds)
+    folds_implicit = divide_dataset(implicit_user_based_utility, num_folds)
 
-    user_dict_explicit = s_load(user_based_dict_path)
-    item_dict_explicit = s_load(item_based_dict_path)
+    train_dict_explicit = merge_dicts([fold for fold in folds_explicit[:3]])
+    test_dict = folds_explicit[3] 
 
-    items = set(item_dict_explicit.keys())
-    dicts = divide_dict_into_k(user_dict_explicit, 4)
-    
-    d0 = dicts[0]
-    d1 = dicts[1]
-    d2 = dicts[2]
-    d3 = dicts[3]
+    train_dict_implicit = merge_dicts([fold for fold in folds_explicit[:3]])
+    test_dict_impl = folds_implicit[3] 
 
-    user = list(d0.keys())[0]    
+    user = list(test_dict.keys())[0]  
+
     print('user:{}'.format(user))
 
-    d_123 = merge_dicts([d1,d2,d3])
-    
-    now = datetime.now()
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
-    
-    res = top_k_without_implicit(user, d_123, items, 100)
+    clique = correlation_coefficent.compute_clique_with_implicit(user, train_dict_explicit, train_dict_implicit, 100, 1, 1) #TODO define a and b in a proper manner
 
-    print(res)
+    test_items = list(test_dict[user].keys())
 
-    now = datetime.now()
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
-
+    predictions = np.array([ [item, predict(user, item, clique, train_dict_explicit), test_dict[user][item]] for item in test_items])
+    print(predictions)
