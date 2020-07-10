@@ -8,21 +8,84 @@ import numpy as np
 
 from constants import *
 
-"""
-    returns a value that represents
-    how similar two classes are
-"""
-def book_distance(book1, book2, book_data):
-    class1 = book_data[book1]["product_category"].split(',')
-    class2 = book_data[book2]["product_category"].split(',')
+'''
+IMPORTANT READ ME: The books are represented as lists with the following format:
+['uniqueISBN', 'bookTitle', 'bookAuthor', 'topic']
+'''
 
-    last_common = 0
-
-    for i in range(0, min(len(class1), len(class2))):
-        if(class1[i]!=class2[i]):
-            last_common = i - 1 
+# Dissimilarity between a pair of topics
+def topic_dissimilarity(topic1, topic2):
+    class1 = topic1.split(',')
+    class2 = topic2.split(',')
+    common_nodes = 0
+    len1 = len(class1)
+    len2 = len(class2)
     
-    return len(class1) + len(class2) - 2*last_common 
+    for i in range(min(len1, len2)):
+        if class1[i] == class2[i]:
+            common_nodes += 1
+        else:
+            break
+    
+    return 1 - 2*(common_nodes - 1)/(len1 -1 + len2 - 1)
+
+# Consider boolean dissimilarity between a pair of authors
+def author_dissimilarity(author1, author2):
+    if author1 != author2:
+        return 1
+    else:
+        return 0
+
+# Input = actual top N list (where N > 10, such as 50 for ex.) and diversification factor (float in [0, 1]) that gives importance to the dissimilarity
+# Output = top 10 list with elements in the top N passed in input, but more diversified (according to the value of the diversification factor)
+def diversify_top_ten(old_list, diversification_factor):
+    new_list = old_list[:1] # The first element remains always the same
+    old_ranking = [list((rank, old_list[rank - 1], 0)) for rank in range(1, len(old_list) + 1)] # List of triples (rank(starting from 1), item, dissimilarity_actual_value)
+    new_item = new_list[0]
+    
+    for i in range(1, 10):
+        old_ranking = list(filter(lambda x: x[1][0] != new_item[0], old_ranking)) # Remove the element passed in the previous iteration to the new list from the old ranking
+        dissimilarities = []
+        
+        for index in range(len(old_ranking)):
+            triple = old_ranking[index]
+            old_ranking[index][2] += (topic_dissimilarity(triple[1][3], new_item[3]) + author_dissimilarity(triple[1][2], new_item[2])) / 2 # Update the dissimilarity value considering the last added item (avg)
+            dissimilarities.append(old_ranking[index])
+        
+        dissimilarities.sort(reverse=True, key=lambda tup: tup[2]) # Sort in decreasing order according to the dissimilarity value
+        dissimilarity_rank = 0
+        min_rank = len(old_list) + 1 + len(dissimilarities)
+        
+        for triple in dissimilarities:
+            new_rank = triple[0] * (1 - diversification_factor) + dissimilarity_rank * diversification_factor # We consider the rank for both the old list and the dissimilarity sorted list
+            if new_rank < min_rank:
+                new_item = triple[1]
+                min_rank = new_rank
+            dissimilarity_rank += 1
+        
+        new_list.append(new_item)
+    
+    return new_list
+
+def intra_list_similarity(l):
+    similarity = 0
+    n_items = len(l)
+
+    for i in range(n_items - 1):
+        for j in range(i + 1, n_items):
+            (item1, item2) = (l[i], l[j])
+            similarity += ((1 - topic_dissimilarity(item1[3], item2[3])) + (1 - author_dissimilarity(item1[2], item2[2]))) / 2
+
+    return similarity
+
+def lists_overlap(l1, l2):
+    overlap = 0
+
+    for i in range(len(l1)):
+        if l1[i][0] == l2[i][0]:
+            overlap += 1
+
+    return overlap
 
     
 """
@@ -122,3 +185,9 @@ if __name__ == "__main__":
 
     predictions = np.array([ [item, predict(user, item, clique, train_dict_explicit), test_dict[user][item]] for item in test_items])
     print(predictions) """
+
+    # Uncomment this part if you want to import the dictionary containing all infos about the several books
+    '''
+    with open('../Book-Crossing dataset cleaning/books_dict.pickle', 'rb') as handle:
+        books_dict = pickle.load(handle)
+    '''
