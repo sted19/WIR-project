@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 
+
 movies_path = os.path.join(os.path.join(os.getcwd(),'../Datasets'),'movies_dataset')
 books_path = os.path.join(os.getcwd(),'../Book-Crossing dataset cleaning')
 
@@ -18,3 +19,7 @@ CORES = multiprocessing.cpu_count()
 seed = 2
 
 a = 0.95
+
+MIN_TEST_VALUE = 15
+TO_DIFFERENTIATE_SIZE = 15
+DIVERSIFICATION_FACTOR_RANGE = 10

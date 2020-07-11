@@ -1,12 +1,15 @@
 from load_files import divide_dataset
 from load_files import merge_dicts
 from load_files import l_load
+from load_files import build_books_data
 import correlation_coefficent 
 import multiprocessing
 import os
 import numpy as np
 
 from constants import *
+
+np.random.seed(seed)
 
 '''
 IMPORTANT READ ME: The books are represented as lists with the following format:
@@ -40,7 +43,9 @@ def author_dissimilarity(author1, author2):
 # Output = top 10 list with elements in the top N passed in input, but more diversified (according to the value of the diversification factor)
 def diversify_top_ten(old_list, diversification_factor):
     new_list = old_list[:1] # The first element remains always the same
+    
     old_ranking = [list((rank, old_list[rank - 1], 0)) for rank in range(1, len(old_list) + 1)] # List of triples (rank(starting from 1), item, dissimilarity_actual_value)
+
     new_item = new_list[0]
     
     for i in range(1, 10):
@@ -155,9 +160,114 @@ def predict_implicit(user, item, clique, utility_matrix):
         return 0
     return numerator/denominator
 
-# if True it computes the tuning of the variable a
-a_tuning = False 
+'''
+    computes precision and recall
+    predicted_ranking -> [[item_id, ... ]]
+    true_ratings -> {item_id:rating}
+'''
+def compute_implicit_value(predicted_ranking, true_ratings):
+    total_relevant = 0
+    for item in true_ratings.keys():
+        if(true_ratings[item]>5):
+            total_relevant += 1
 
+    returned_relevant = 0
+    for item_ in predicted_ranking:
+        item_id = item_[0]
+
+        if(true_ratings[item_id] > 5): 
+            returned_relevant += 1
+    
+    if(total_relevant == 0):
+        recall = 1
+    else:
+        recall = returned_relevant/total_relevant
+    
+    precision = returned_relevant/len(predicted_ranking)
+
+    return (precision, recall)
+'''
+    Paramenters
+        predicted_ranking -> [[item_id, ... ]] sorted from the first to return, to the last one
+        true_ratings -> {item_id:rating}
+    computes the list value 
+'''
+def compute_list_value(predicted_ranking, true_ratings):
+    list_value = 0
+    for item_idx in range (len(predicted_ranking)):
+        true_rating = true_ratings[predicted_ranking[item_idx][0]]
+        score = (1/(np.log(item_idx+np.e)))*true_rating 
+
+        list_value += score
+    return list_value
+
+'''
+    parameters
+        train_dict_explicit -> {user:{item:explicit_rating}}
+        train_dict_implicit -> {user:{item:implicit_rating}}
+        test_dict_expl -> {user:{item:explicit_rating}}
+
+    returns {diversification_factor:{precision, recall, list_value}}
+'''
+def user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl):
+    results = {}
+    book_data = build_books_data(explicit_dict_path_books)
+
+    num_tests = 0
+
+    for user in test_dict_expl.keys():
+        tmp_user_prediction_list = []
+
+        if(len(set(test_dict_expl[user].keys())) > MIN_TEST_VALUE):
+            num_tests += 1
+            print('new test user: {}'.format(num_tests))
+
+            clique = correlation_coefficent.compute_clique_with_implicit(user, train_dict_explicit, train_dict_implicit, 100, a, 1-a, save=False)
+
+            for item in test_dict_expl[user].keys():
+                tmp_rating = predict(user, item, clique, train_dict_explicit)
+                tmp_user_prediction_list.append([item, tmp_rating])
+
+            prediction_list = np.array(tmp_user_prediction_list)
+            prediction_list = prediction_list[np.argsort(prediction_list[:,1])[::-1]][0:TO_DIFFERENTIATE_SIZE]
+
+            item_topic_book_list = []
+            for item_ in  prediction_list:
+                item_id = item_[0]
+                item_topic_book_list.append([item_id, book_data[item_id]['bookTitle'], 
+                                                book_data[item_id]['bookAuthor'], 
+                                                book_data[item_id]['topic']])
+            
+            for i in range(DIVERSIFICATION_FACTOR_RANGE+1):
+                rate = i/DIVERSIFICATION_FACTOR_RANGE
+                
+                diversify_top_ten_list = diversify_top_ten(item_topic_book_list, rate) 
+
+                list_value = compute_list_value(diversify_top_ten_list, test_dict_expl[user])
+                
+                precision, recall = compute_implicit_value(diversify_top_ten_list, test_dict_expl[user])
+
+                if(results.get(i) == None):
+                    results[i] = {}
+                    results[i]['list_value'] = list_value
+                    results[i]['precision'] = precision
+                    results[i]['recall'] = recall
+                else :
+                    results[i]['list_value'] = results[i]['list_value'] + list_value
+                    results[i]['precision'] = results[i]['precision'] + precision
+                    results[i]['recall'] = results[i]['recall'] + recall
+
+    for test in results.keys():
+        results[test]['list_value'] = results[test]['list_value']/num_tests
+        results[test]['precision'] = results[test]['precision']/num_tests
+        results[test]['recall'] = results[test]['recall']/num_tests
+
+    return results
+
+# if True computes the tuning of the variable a
+a_tuning = False 
+#if True computes the user-based test 
+user_tests_cond = True
 if __name__ == "__main__":
     explicit_user_based_utility = l_load(explicit_dict_path_books, False)
     implicit_user_based_utility = l_load(implicit_dict_path_books, False)
@@ -168,6 +278,10 @@ if __name__ == "__main__":
     test_dict_expl = folds_explicit[-1] 
 
     train_dict_implicit = implicit_user_based_utility
+
+    if(user_tests_cond):
+        res = user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl)
+        print(res)
 
     if(a_tuning):
         from constant_tuning import constant_tuning
