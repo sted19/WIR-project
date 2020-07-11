@@ -1,116 +1,193 @@
-from load_files import divide_dict_into_k
+from load_files import divide_dataset
 from load_files import merge_dicts
-from load_files import s_load
+from load_files import l_load
 import correlation_coefficent 
-import prediction_thread
 import multiprocessing
 import os
 import numpy as np
 
-movies_path = os.path.join(os.path.join(os.getcwd(),'Datasets'),'movies_dataset')
+from constants import *
 
-user_based_dict_path = os.path.join(movies_path,'utility_matrix_user_based.txt')
-item_based_dict_path = os.path.join(movies_path,'utility_matrix_item_based.txt')
+'''
+IMPORTANT READ ME: The books are represented as lists with the following format:
+['uniqueISBN', 'bookTitle', 'bookAuthor', 'topic']
+'''
 
-CORES = multiprocessing.cpu_count()
-
-"""
-    returns a value that represents
-    how similar two classes are
-"""
-def book_distance(book1, book2, book_data):
-    class1 = book_data[book1]["product_category"].split(',')
-    class2 = book_data[book2]["product_category"].split(',')
-
-    last_common = 0
-
-    for i in range(0, min(len(class1), len(class2))):
-        if(class1[i]!=class2[i]):
-            last_common = i - 1 
+# Dissimilarity between a pair of topics
+def topic_dissimilarity(topic1, topic2):
+    class1 = topic1.split(',')
+    class2 = topic2.split(',')
+    common_nodes = 0
+    len1 = len(class1)
+    len2 = len(class2)
     
-    return len(class1) + len(class2) - 2*last_common 
-
+    for i in range(min(len1, len2)):
+        if class1[i] == class2[i]:
+            common_nodes += 1
+        else:
+            break
     
+    return 1 - 2*(common_nodes - 1)/(len1 -1 + len2 - 1)
+
+# Consider boolean dissimilarity between a pair of authors
+def author_dissimilarity(author1, author2):
+    if author1 != author2:
+        return 1
+    else:
+        return 0
+
+# Input = actual top N list (where N > 10, such as 50 for ex.) and diversification factor (float in [0, 1]) that gives importance to the dissimilarity
+# Output = top 10 list with elements in the top N passed in input, but more diversified (according to the value of the diversification factor)
+def diversify_top_ten(old_list, diversification_factor):
+    new_list = old_list[:1] # The first element remains always the same
+    old_ranking = [list((rank, old_list[rank - 1], 0)) for rank in range(1, len(old_list) + 1)] # List of triples (rank(starting from 1), item, dissimilarity_actual_value)
+    new_item = new_list[0]
     
-
-
-
-"""
-    returns the K items with higher score for 
-    the user 
-"""
-def top_k_without_implicit(user, dict_explicit, set_of_items, k):
-    float_dict = {}
-    predicted = []
-    for k1 in dict_explicit.keys():
-        float_dict[k1] = {}
-        for k2 in  dict_explicit[k1].keys():
-            float_dict[k1][k2] = float(dict_explicit[k1][k2])
-    
-    items = list(set_of_items.difference(set(dict_explicit[user].keys())))
-
-    predicted.append([correlation_coefficent.prediction_without_implicit(user,float_dict,items[0],k), items[0]])
-
-    user_index = 1
-    while(user_index < len(items)):
-        threads = []
+    for i in range(1, 10):
+        old_ranking = list(filter(lambda x: x[1][0] != new_item[0], old_ranking)) # Remove the element passed in the previous iteration to the new list from the old ranking
+        dissimilarities = []
         
-        for i in range(0,CORES):
-            
-                
-            if(user_index + i == len(items)):
-                break
-            
-            th = prediction_thread.PredictionThread(user, dict_explicit, {}, False, items[user_index + i], k, 0, 0)
-            th.start()
-            threads.append(th)
+        for index in range(len(old_ranking)):
+            triple = old_ranking[index]
+            old_ranking[index][2] += (topic_dissimilarity(triple[1][3], new_item[3]) + author_dissimilarity(triple[1][2], new_item[2])) / 2 # Update the dissimilarity value considering the last added item (avg)
+            dissimilarities.append(old_ranking[index])
         
-        for th in threads:
-            th.join()
-            res_i = th.get_res()
-            predicted.append([res_i, th.get_item()]) 
+        dissimilarities.sort(reverse=True, key=lambda tup: tup[2]) # Sort in decreasing order according to the dissimilarity value
+        dissimilarity_rank = 0
+        min_rank = len(old_list) + 1 + len(dissimilarities)
+        
+        for triple in dissimilarities:
+            new_rank = triple[0] * (1 - diversification_factor) + dissimilarity_rank * diversification_factor # We consider the rank for both the old list and the dissimilarity sorted list
+            if new_rank < min_rank:
+                new_item = triple[1]
+                min_rank = new_rank
+            dissimilarity_rank += 1
+        
+        new_list.append(new_item)
+    
+    return new_list
 
-        user_index += CORES
+def intra_list_similarity(l):
+    similarity = 0
+    n_items = len(l)
 
-    predicted = np.array(predicted) 
+    for i in range(n_items - 1):
+        for j in range(i + 1, n_items):
+            (item1, item2) = (l[i], l[j])
+            similarity += ((1 - topic_dissimilarity(item1[3], item2[3])) + (1 - author_dissimilarity(item1[2], item2[2]))) / 2
 
-    sorted_predictions = np.flip(predicted[np.argsort(predicted[:,0])])
+    return similarity
 
-    print('sorted_predictions->')
-    print(sorted_predictions)
+def lists_overlap(l1, l2):
+    overlap = 0
 
-    return sorted_predictions[:10]
+    for i in range(len(l1)):
+        if l1[i][0] == l2[i][0]:
+            overlap += 1
 
-from datetime import datetime
+    return overlap
+
+    
+"""
+    returns the predicted rating given a user and an item
+
+    user -> userID
+    item -> itemID
+    clique -> list of users that are similar to userID
+"""
+
+def predict(user, item, clique, utility_matrix):
+    numerator = 0
+    denominator = 0
+    for elem in clique:
+        neighbor = elem[0]
+        similarity = elem[1]
+
+
+        neigh_dict = utility_matrix.get(neighbor)
+
+        if(neigh_dict == None):
+            #print('user not present: {}'.format(neighbor))
+            continue
+
+        rating = neigh_dict.get(item)
+        
+        if  rating == None:
+            continue
+
+        numerator += rating*similarity
+        denominator += similarity
+    
+    if denominator == 0:
+        #print('denominator is 0, no user in the clique rated this item')
+        return 0
+    
+    return numerator/denominator
+
+"""
+    returns the predicted rating given a user and an item
+
+    user -> userID
+    item -> itemID
+    clique -> list of users that are similar to userID
+"""
+
+def predict_implicit(user, item, clique, utility_matrix):
+    numerator = 0
+    denominator = 0
+    for elem in clique:
+        neighbor = elem[0]
+        similarity = elem[1]
+
+        neigh_dict = utility_matrix.get(neighbor)
+        denominator += similarity
+        
+        if(neigh_dict == None):
+            continue
+        rating = neigh_dict.get(item)
+        
+        if rating == None:
+            continue
+        numerator += similarity
+    
+    if denominator == 0:
+        print('denominator is 0, no user in the clique')
+        return 0
+    return numerator/denominator
+
+# if True it computes the tuning of the variable a
+a_tuning = False 
+
 if __name__ == "__main__":
+    explicit_user_based_utility = l_load(explicit_dict_path_books, False)
+    implicit_user_based_utility = l_load(implicit_dict_path_books, False)
 
+    folds_explicit = divide_dataset(explicit_user_based_utility, 10)
+    
+    train_dict_explicit = merge_dicts([fold for fold in folds_explicit[:-1]])
+    test_dict_expl = folds_explicit[-1] 
+
+    train_dict_implicit = implicit_user_based_utility
+
+    if(a_tuning):
+        from constant_tuning import constant_tuning
+        constant_tuning(train_dict_explicit, train_dict_implicit)
+    
     
 
-    user_dict_explicit = s_load(user_based_dict_path)
-    item_dict_explicit = s_load(item_based_dict_path)
+    """ user = list(test_dict.keys())[0]  
 
-    items = set(item_dict_explicit.keys())
-    dicts = divide_dict_into_k(user_dict_explicit, 4)
-    
-    d0 = dicts[0]
-    d1 = dicts[1]
-    d2 = dicts[2]
-    d3 = dicts[3]
-
-    user = list(d0.keys())[0]    
     print('user:{}'.format(user))
 
-    d_123 = merge_dicts([d1,d2,d3])
-    
-    now = datetime.now()
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
-    
-    res = top_k_without_implicit(user, d_123, items, 100)
+    clique = correlation_coefficent.compute_clique_with_implicit(user, train_dict_explicit, train_dict_implicit, 100, 1, 1) #TODO define a and b in a proper manner
 
-    print(res)
+    test_items = list(test_dict[user].keys())
 
-    now = datetime.now()
-    current_time = now.strftime("%H:%M:%S")
-    print("Current Time =", current_time)
+    predictions = np.array([ [item, predict(user, item, clique, train_dict_explicit), test_dict[user][item]] for item in test_items])
+    print(predictions) """
 
+    # Uncomment this part if you want to import the dictionary containing all infos about the several books
+    '''
+    with open('../Book-Crossing dataset cleaning/books_dict.pickle', 'rb') as handle:
+        books_dict = pickle.load(handle)
+    '''

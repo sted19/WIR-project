@@ -198,3 +198,19 @@ if __name__ == "__main__":
     users_books_ratings.to_csv('All_ratings.csv', sep='\t')
     explicit_ratings.to_csv('Explicit.csv', sep='\t')
     implicit_ratings.to_csv('Implicit.csv', sep='\t')
+
+    '''
+    # Create a dictionary where the keys are the several uniqueISBNs in users_books_ratings and the values are lists of ['uniqueISBN', 'bookTitle', 'bookAuthor', 'topic']
+    books_dict = {}
+
+    for isbn in users_books_ratings.uniqueISBN.unique():
+        rslt_df = users_books_ratings[users_books_ratings['ISBN'] == isbn]
+        values = list([tuple(x) for x in rslt_df.values][0])
+        topic = str(values[-1])
+        values = values[1:4]
+        values.append(topic)
+        books_dict[str(isbn)] = values
+
+    with open('books_dict.pickle', 'wb') as handle:
+        pickle.dump(books_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    '''
