@@ -171,13 +171,13 @@ def compute_implicit_value(predicted_ranking, true_ratings):
     returned_relevant = 0
         
     for item in true_ratings.keys():
-        if(true_ratings[item]>5):
+        if(true_ratings[item]>0.5):
             total_relevant += 1
 
     for item_ in predicted_ranking:
         item_id = item_[0]
 
-        if(true_ratings[item_id] > 5): 
+        if(true_ratings[item_id] > 0.5): 
             returned_relevant += 1
 
     if(total_relevant == 0):
@@ -211,25 +211,45 @@ def compute_list_value(predicted_ranking, true_ratings):
         train_dict_explicit -> {user:{item:explicit_rating}}
         train_dict_implicit -> {user:{item:implicit_rating}}
         test_dict_expl -> {user:{item:explicit_rating}}
+        all_imp_items -> set of all the items
 
     returns {diversification_factor:{precision, recall, list_value}}
 '''
-def user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl):
+def user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, test_dict_impl, all_imp_items):
     results = {}
     book_data = build_books_data(explicit_dict_path_books)
 
+    test_users = set(test_dict_expl.keys()).intersection(set(test_dict_impl.keys())).intersection(set(train_dict_explicit.keys())).intersection(set(train_dict_implicit.keys()))
+
+
     num_tests = 0
 
-    for user in test_dict_expl.keys():
+    for user in test_users:
         tmp_user_prediction_list = []
 
-        if(len(set(test_dict_expl[user].keys())) >= MIN_TEST_VALUE):
+        if(len(set(test_dict_impl[user].keys())) >= MIN_TEST_VALUE):
+
+            additiona_test_items = list(all_imp_items.difference(set(test_dict_impl[user].keys())))[:int(TO_DIFFERENTIATE_SIZE/2)]
+
+            tmp_test_items = set(test_dict_impl[user].keys()).union(additiona_test_items)
+
+            tmp_impl_test_dict = {}
+
+            for item in tmp_test_items:
+                if(book_data.get(item) == None or train_dict_explicit[user].get(item) != None or train_dict_implicit[user].get(item)!=None):
+                    continue
+                elif(test_dict_impl[user].get(item) != None or (test_dict_expl[user].get(item) != None and test_dict_expl[user].get(item) > 6)):
+                    tmp_impl_test_dict[item] = 1
+                else:
+                    tmp_impl_test_dict[item] = 0
+
+
             num_tests += 1
             print('new test user: {}'.format(num_tests))
 
             clique = correlation_coefficent.compute_clique_with_implicit(user, train_dict_explicit, train_dict_implicit, 100, a, 1-a, save=False)
 
-            for item in test_dict_expl[user].keys():
+            for item in tmp_impl_test_dict.keys():
                 tmp_rating = predict(user, item, clique, train_dict_explicit)
                 tmp_user_prediction_list.append([item, tmp_rating])
 
@@ -248,22 +268,22 @@ def user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl):
                 
                 diversify_top_ten_list = diversify_top_ten(item_topic_book_list, rate) 
 
-                list_value = compute_list_value(diversify_top_ten_list, test_dict_expl[user])
+                #list_value = compute_list_value(diversify_top_ten_list, test_dict_expl[user])
                 
-                precision, recall = compute_implicit_value(diversify_top_ten_list, test_dict_expl[user])
+                precision, recall = compute_implicit_value(diversify_top_ten_list, tmp_impl_test_dict)
 
                 if(results.get(i) == None):
                     results[i] = {}
-                    results[i]['list_value'] = list_value
+                    #results[i]['list_value'] = list_value
                     results[i]['precision'] = precision
                     results[i]['recall'] = recall
                 else :
-                    results[i]['list_value'] = results[i]['list_value'] + list_value
+                    #results[i]['list_value'] = results[i]['list_value'] + list_value
                     results[i]['precision'] = results[i]['precision'] + precision
                     results[i]['recall'] = results[i]['recall'] + recall
 
     for test in results.keys():
-        results[test]['list_value'] = results[test]['list_value']/num_tests
+        #results[test]['list_value'] = results[test]['list_value']/num_tests
         results[test]['precision'] = results[test]['precision']/num_tests
         results[test]['recall'] = results[test]['recall']/num_tests
 
@@ -349,29 +369,34 @@ def item_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, user_ba
 # if True computes the tuning of the variable a
 a_tuning = False 
 # if True computes the user-based test 
-user_tests_cond = False
+user_tests_cond = True
 # if True computes the item-based test
-item_tests_cond = True
+item_tests_cond = False
 
 if __name__ == "__main__":
     # Here we consider only the test for item-based
     explicit_user_based_utility = l_load(explicit_dict_path_books, item_tests_cond)
     implicit_user_based_utility = l_load(implicit_dict_path_books, item_tests_cond)
 
+    all_imp_items = set((invert_dict(implicit_user_based_utility)).keys())
+
     folds_explicit = divide_dataset(explicit_user_based_utility, 3)
     
     train_dict_explicit = merge_dicts([fold for fold in folds_explicit[:-1]])
     test_dict_expl = folds_explicit[-1]
-    # Use it iff we need to execute the utem-based test
-    user_based_test_dict_expl = invert_dict(test_dict_expl) 
 
-    train_dict_implicit = implicit_user_based_utility
+    folds_implicit = divide_dataset(implicit_user_based_utility, 3)
+    
+    train_dict_implicit = merge_dicts([fold for fold in folds_implicit[:-1]])
+    test_dict_impl = folds_implicit[-1]
 
     if(user_tests_cond):
-        res = user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl)
+        res = user_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, test_dict_impl, all_imp_items)
         print(res)
 
     if(item_tests_cond):
+        # Use it iff we need to execute the utem-based test
+        user_based_test_dict_expl = invert_dict(test_dict_expl) 
         res = item_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, user_based_test_dict_expl)
         print(res)
 
