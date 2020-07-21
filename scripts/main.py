@@ -8,6 +8,8 @@ import os
 import numpy as np
 import pickle
 
+from matplotlib import pyplot
+
 from constants import *
 
 np.random.seed(seed)
@@ -440,11 +442,11 @@ def item_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, user_ba
 # if True computes the tuning of the variable a
 a_tuning = False 
 # if True computes the user-based binary test 
-user_binary_tests_cond = False
+user_binary_tests_cond = True
 # if True computes the user-based explicit test 
 user_expl_tests_cond = False
 # if True computes the item-based test
-item_tests_cond = True
+item_tests_cond = False
 
 if __name__ == "__main__":
     explicit_user_based_utility = l_load(explicit_dict_path_books, item_tests_cond)
@@ -463,11 +465,91 @@ if __name__ == "__main__":
         res = user_binary_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, test_dict_impl, all_imp_items)
         print(res)
 
+        xPoints = []
+        precisions = []
+        recalls = []
+        list_value_differences = []
+        for theta in res.keys():
+            precision = res[theta]['precision']
+            recall = res[theta]['recall']
+            #list_value_difference = res[theta]['list_value']
+
+            xPoints.append(float(theta))
+            precisions.append(precision)
+            recalls.append(recall)
+            #list_value_differences.append(list_value_difference)
+
+        pyplot.plot(xPoints, precisions)
+        pyplot.xlabel("Theta")
+        pyplot.ylabel("Precision")
+        pyplot.ylim(0, 1)
+        pyplot.savefig("precision.png", dpi=150)
+
+        pyplot.close()
+
+        pyplot.plot(xPoints, recalls)
+        pyplot.xlabel("Theta")
+        pyplot.ylabel("Recall")
+        pyplot.ylim(0, 1)
+        pyplot.savefig("recall.png", dpi=150)
+        pyplot.close()
+
     train_dict_implicit = implicit_user_based_utility
 
     if(user_expl_tests_cond):
         res = user_expl_tests(train_dict_explicit, train_dict_implicit, test_dict_expl)
         print(res)
+
+        xPoints = []
+        precisions = []
+        recalls = []
+        list_value_differences = []
+        dcgs = []
+        for theta in res.keys():
+            precision = res[theta]['precision']
+            recall = res[theta]['recall']
+            list_value_difference = res[theta]['list_value_difference']
+            dcg = res[theta]['list_value']
+
+            xPoints.append(float(theta))
+            precisions.append(precision)
+            recalls.append(recall)
+            list_value_differences.append(list_value_difference)
+            dcgs.append(dcg)
+
+        pyplot.plot(xPoints, precisions)
+        pyplot.xlabel("Theta")
+        pyplot.ylabel("Precision")
+        pyplot.ylim(0, 1)
+        pyplot.savefig("Explicit_precision.png", dpi=150)
+
+        pyplot.close()
+
+        pyplot.plot(xPoints, recalls)
+        pyplot.xlabel("Theta")
+        pyplot.ylabel("Recall")
+        pyplot.ylim(0, 1)
+        pyplot.savefig("Explicit_recall.png", dpi=150)
+
+        pyplot.close()
+
+
+        pyplot.xlabel("Theta")
+        pyplot.ylabel("Discounted Comulative Gain Difference")
+        pyplot.ylim(0, int(max(list_value_differences) + 1))
+        pyplot.plot(xPoints, list_value_differences)
+        pyplot.savefig("Explicit_ListValueDifference.png", dpi=150)
+
+        pyplot.close()
+
+        pyplot.xlabel("Theta")
+        pyplot.ylabel("Discounted Comulative Gain")
+        pyplot.ylim(0, int(max(dcgs) + 1))
+        pyplot.plot(xPoints, dcgs)
+        pyplot.savefig("Explicit_DiscountedComulativeGain.png", dpi=150)
+
+        pyplot.close()
+
 
     if(item_tests_cond):
         user_based_test_dict_expl = invert_dict(test_dict_expl) 
