@@ -1,7 +1,6 @@
 import numpy as np
 import json
 from constants import *
-np.random.seed(seed)
 
 
 def add_element(d, user_id, item_id, rating, item_based):
@@ -62,7 +61,7 @@ def l_load(file_name, item_based):
         item_uisbn = line[item_uisbn_index]
         user_id = line [user_id_index]
         rating = float(line[rating_index])
-            
+        
         add_element(dictionary, user_id, item_uisbn, rating, item_based)
           
     
@@ -118,7 +117,53 @@ def merge_dicts(dicts):
                 ret[key1][key2] = tmp_dict[key1][key2]
 
     return ret
+
+'''
+    returns a dictionary {item_id:{bookAuthor, topic, bookTitle}}
+'''
+def build_books_data(file_name):
+    dictionary = {}
     
+    f = open(file_name, 'r')
+    fields = f.readline().strip().split('\t') # first line has no data
+
+    item_uisbn_index = fields.index('uniqueISBN')+1
+    author_index = fields.index('bookAuthor')+1
+    topic_index = fields.index('topic')+1
+    book_title_index = fields.index('bookTitle')+1
+
+    #userId	ISBN	bookTitle	bookAuthor	yearOfPublication	publisher	bookRating	uniqueISBN	topic
+
+    while(True):
+        line = f.readline().strip().split('\t')
+        if(line == ['']):
+            break
+
+        item_uisbn = line[item_uisbn_index]
+        topic = line[topic_index]
+        book_title = line[book_title_index]
+        author = line[author_index]
+
+
+        if('X' == item_uisbn[-1] or 'x' == item_uisbn[-1]):
+            item_uisbn_ = item_uisbn[:-1] + '1'
+        elif( item_uisbn == 'B00009ANY9'):
+            item_uisbn_ = '1'
+        else:
+            item_uisbn_ = item_uisbn + '0'
+
+        item_uisbn_ = float(item_uisbn_)
+        
+        dictionary[item_uisbn_] = {}
+        dictionary[item_uisbn_]['bookAuthor'] = author
+        dictionary[item_uisbn_]['topic'] = topic
+        dictionary[item_uisbn_]['bookTitle'] = book_title
+    
+    return dictionary
+
+            
+        
+
 from datetime import datetime
 from constants import *
 

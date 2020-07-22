@@ -37,7 +37,7 @@ def constant_tuning(train_dict_expl, train_dict_impl):
 
         new_test_fold = True
 
-        for a_numerator in range(1,20):
+        for a_numerator in range(20,21):
 
             print('a: {}'.format(a_numerator))
             now = datetime.now()

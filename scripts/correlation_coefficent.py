@@ -187,8 +187,11 @@ def sum_vectors(v1, v2, a, b):
         
     return ret
 
-def compute_clique_with_implicit(user, explicit_utility_matrix, implicit_utility_matrix, clique_size, a, b, users=None, new_test_fold=True):
+def compute_clique_with_implicit(user, explicit_utility_matrix, implicit_utility_matrix, clique_size, a, b, users=None, new_test_fold=True, save = True):
 
+    tmp_explicit_sims = None
+    tmp_implicit_sims = None
+    
     if(explicit_sims.get(user) == None or new_test_fold):
 
         if(users == None):
@@ -247,11 +250,21 @@ def compute_clique_with_implicit(user, explicit_utility_matrix, implicit_utility
             for similarity in elem:
                 implicit_similarities.append(similarity)
 
-        explicit_sims[user] = explicit_similarities
-        implicit_sims[user] = implicit_similarities
+        tmp_explicit_sims = explicit_similarities
+        tmp_implicit_sims = implicit_similarities
 
-    implicit_similarities = implicit_sims[user]
-    explicit_similarities = explicit_sims[user]
+        if(save):
+            explicit_sims[user] = explicit_similarities
+            implicit_sims[user] = implicit_similarities
+
+    
+    if(implicit_sims.get(user) != None):
+        implicit_similarities = implicit_sims[user]
+        explicit_similarities = explicit_sims[user]
+
+    else: 
+        implicit_similarities = tmp_implicit_sims
+        explicit_similarities = tmp_explicit_sims
 
     similarities = sum_vectors(explicit_similarities, implicit_similarities, a, b)
 
