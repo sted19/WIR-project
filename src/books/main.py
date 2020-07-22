@@ -289,7 +289,7 @@ def user_binary_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, 
                 
                 precision, recall = compute_implicit_value(diversify_top_ten_list, tmp_impl_test_dict, 0.1)
 
-                list_similarity = intra_list_similarity(diversify_top_ten)
+                list_similarity = intra_list_similarity(diversify_top_ten_list)
 
                 if(results.get(i) == None):
                     results[i] = {}
