@@ -289,20 +289,25 @@ def user_binary_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, 
                 
                 precision, recall = compute_implicit_value(diversify_top_ten_list, tmp_impl_test_dict, 0.1)
 
+                list_similarity = intra_list_similarity(diversify_top_ten)
+
                 if(results.get(i) == None):
                     results[i] = {}
                     #results[i]['list_value'] = list_value
                     results[i]['precision'] = precision
                     results[i]['recall'] = recall
+                    results[i]['intra_list_similarity'] = list_similarity
                 else :
                     #results[i]['list_value'] = results[i]['list_value'] + list_value
                     results[i]['precision'] = results[i]['precision'] + precision
                     results[i]['recall'] = results[i]['recall'] + recall
+                    results[i]['intra_list_similarity'] = results[i]['intra_list_similarity'] + list_similarity
 
     for test in results.keys():
         #results[test]['list_value'] = results[test]['list_value']/num_tests
         results[test]['precision'] = results[test]['precision']/num_tests
         results[test]['recall'] = results[test]['recall']/num_tests
+        results[test]['intra_list_similarity'] = results[test]['intra_list_similarity']/num_tests
 
     return results
 
@@ -667,6 +672,8 @@ if __name__ == "__main__":
     if(item_tests_cond):
         user_based_test_dict_expl = invert_dict(test_dict_expl) 
         res = item_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, user_based_test_dict_expl)
+        with open('result-expl-item-based.json', 'w') as fp:
+            json.dump(res, fp)
         print(res)
     if(item_impl_test_cond):
         folds_implicit = divide_dataset(implicit_user_based_utility, 3)
