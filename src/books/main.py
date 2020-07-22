@@ -10,6 +10,7 @@ import multiprocessing
 import os
 import numpy as np
 import pickle
+import json
 
 from matplotlib import pyplot
 
@@ -182,6 +183,9 @@ def compute_implicit_value(predicted_ranking, true_ratings, scale=1):
 
     for item_ in predicted_ranking:
         item_id = item_[0]
+        
+        if(true_ratings.get(item_id) == None):
+            continue
 
         if(true_ratings[item_id] > threshold): 
             returned_relevant += 1
@@ -340,23 +344,28 @@ def user_expl_tests(train_dict_explicit, train_dict_implicit, test_dict_expl):
 
                 precision, recall = compute_implicit_value(diversify_top_ten_list, test_dict_expl[user])
 
+                list_similarity = intra_list_similarity(diversify_top_ten_list)
+
                 if(results.get(i) == None):
                     results[i] = {}
                     results[i]['list_value'] = list_value
                     results[i]['precision'] = precision
                     results[i]['recall'] = recall
                     results[i]['list_value_difference'] = difference
+                    results[i]['intra_list_similarity'] = list_similarity
                 else :
                     results[i]['list_value'] = results[i]['list_value'] + list_value
                     results[i]['precision'] = results[i]['precision'] + precision
                     results[i]['recall'] = results[i]['recall'] + recall
                     results[i]['list_value_difference'] = results[i]['list_value_difference'] + difference
+                    results[i]['intra_list_similarity'] = results[i]['intra_list_similarity'] + list_similarity
 
     for test in results.keys():
         results[test]['list_value'] = results[test]['list_value']/num_tests
         results[test]['precision'] = results[test]['precision']/num_tests
         results[test]['recall'] = results[test]['recall']/num_tests
         results[test]['list_value_difference'] = results[test]['list_value_difference']/num_tests
+        results[test]['intra_list_similarity'] = results[test]['intra_list_similarity']/num_tests
 
     return results
 
@@ -421,39 +430,136 @@ def item_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, user_ba
             
             precision, recall = compute_implicit_value(diversify_top_ten_list, user_based_test_dict_expl[user])
 
+            list_similarity = intra_list_similarity(diversify_top_ten_list)
+
             if(results.get(i) == None):
                 results[i] = {}
                 results[i]['list_value'] = list_value
                 results[i]['precision'] = precision
                 results[i]['recall'] = recall
                 results[i]['list_value_difference'] = difference
+                results[i]['intra_list_similarity'] = list_similarity
 
             else :
                 results[i]['list_value'] = results[i]['list_value'] + list_value
                 results[i]['precision'] = results[i]['precision'] + precision
                 results[i]['recall'] = results[i]['recall'] + recall
                 results[i]['list_value_difference'] = results[i]['list_value_difference'] + difference
+                results[i]['intra_list_similarity'] = results[i]['intra_list_similarity'] + list_similarity
 
     for test in results.keys():
         results[test]['list_value'] = results[test]['list_value']/num_tests
         results[test]['precision'] = results[test]['precision']/num_tests
         results[test]['recall'] = results[test]['recall']/num_tests
         results[test]['list_value_difference'] = results[test]['list_value_difference']/num_tests
+        results[test]['intra_list_similarity'] = results[test]['intra_list_similarity']/num_tests
 
     return results
+
+
+def item_binary_tests(train_dict_explicit, train_dict_implicit, test_dict_impl, user_based_test_dict_impl):
+    results = {}
+    book_data = build_books_data(explicit_dict_path_books)
+    users_prediction_lists = {}
+
+    num_tests = 0
+
+    cliques = {}
+    i = 0
+    for item in test_dict_impl.keys():
+        if(train_dict_explicit.get(item) == None):
+            continue
+        clique = None
+
+        for user in test_dict_impl[item].keys():
+            if(len(user_based_test_dict_impl[user].keys()) >= MIN_TEST_VALUE):
+                
+                if(users_prediction_lists.get(user) == None):
+                    users_prediction_lists[user] = []
+                    num_tests += 1
+                    print('new test user: {}'.format(num_tests))
+                
+                if(clique is None):
+                    clique = correlation_coefficent.compute_clique_with_implicit(item, train_dict_explicit, train_dict_implicit, 100, a, 1-a, save=False)
+                    cliques[item] = clique
+
+                tmp_rating = predict(item, user, clique, train_dict_explicit)
+                users_prediction_lists[user].append([item, tmp_rating])
+
+    print("Loop on items ended")
+
+    
+    for user in users_prediction_lists.keys():
+        additiona_test_items = list(set(train_dict_implicit.keys()).difference(set(user_based_test_dict_impl[user].keys())))[:int(TO_DIFFERENTIATE_SIZE/2)]
+
+        for item in additiona_test_items:
+            if(cliques.get(item) is None):
+                cliques[item] = correlation_coefficent.compute_clique_with_implicit(item, train_dict_explicit, train_dict_implicit, 100, a, 1-a, save=False)
+        
+            clique = cliques[item]
+            tmp_rating = predict(item, user, clique, train_dict_explicit)
+            users_prediction_lists[user].append([item, tmp_rating])
+
+
+    for user in users_prediction_lists.keys():
+        prediction_list = np.array(users_prediction_lists[user])
+        prediction_list = prediction_list[np.argsort(prediction_list[:,1])[::-1]][0:int(TO_DIFFERENTIATE_SIZE/2)]
+
+        item_topic_book_list = []
+        for item_ in  prediction_list:
+            item_id = item_[0]
+            item_topic_book_list.append([item_id, book_data[item_id]['bookTitle'], book_data[item_id]['bookAuthor'], book_data[item_id]['topic']])
+            
+        for i in range(DIVERSIFICATION_FACTOR_RANGE):
+            rate = i/DIVERSIFICATION_FACTOR_RANGE
+            
+            diversify_top_ten_list = diversify_top_ten(item_topic_book_list, rate) 
+
+            #(list_value, difference) = compute_list_values(diversify_top_ten_list, user_based_test_dict_impl[user])
+            
+            precision, recall = compute_implicit_value(diversify_top_ten_list, user_based_test_dict_impl[user], scale = 0.1)
+
+            list_similarity = intra_list_similarity(diversify_top_ten_list)
+
+            if(results.get(i) == None):
+                results[i] = {}
+                #results[i]['list_value'] = list_value
+                results[i]['precision'] = precision
+                results[i]['recall'] = recall
+                results[i]['intra_list_similarity'] = list_similarity
+                #results[i]['list_value_difference'] = difference
+
+            else :
+                #results[i]['list_value'] = results[i]['list_value'] + list_value
+                results[i]['precision'] = results[i]['precision'] + precision
+                results[i]['recall'] = results[i]['recall'] + recall
+                results[i]['intra_list_similarity'] = results[i]['intra_list_similarity'] + list_similarity 
+                #results[i]['list_value_difference'] = results[i]['list_value_difference'] + difference
+
+    for test in results.keys():
+        #results[test]['list_value'] = results[test]['list_value']/num_tests
+        results[test]['precision'] = results[test]['precision']/num_tests
+        results[test]['recall'] = results[test]['recall']/num_tests
+        results[test]['intra_list_similarity'] = results[test]['intra_list_similarity']/num_tests
+        #results[test]['list_value_difference'] = results[test]['list_value_difference']/num_tests
+
+    return results
+
 
 # if True computes the tuning of the variable a
 a_tuning = False 
 # if True computes the user-based binary test 
 user_binary_tests_cond = False
 # if True computes the user-based explicit test 
-user_expl_tests_cond = True
+user_expl_tests_cond = False
 # if True computes the item-based test
 item_tests_cond = False
 
+item_impl_test_cond = True
+
 if __name__ == "__main__":
-    explicit_user_based_utility = l_load(explicit_dict_path_books, item_tests_cond)
-    implicit_user_based_utility = l_load(implicit_dict_path_books, item_tests_cond)
+    explicit_user_based_utility = l_load(explicit_dict_path_books, item_tests_cond or item_impl_test_cond)
+    implicit_user_based_utility = l_load(implicit_dict_path_books, item_tests_cond or item_impl_test_cond)
 
     folds_explicit = divide_dataset(explicit_user_based_utility, 3)
     
@@ -466,6 +572,8 @@ if __name__ == "__main__":
         train_dict_implicit = merge_dicts([fold for fold in folds_implicit[:-1]])
         test_dict_impl = folds_implicit[-1]
         res = user_binary_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, test_dict_impl, all_imp_items)
+        with open('result-binary-user-based.json', 'w') as fp:
+            json.dump(res, fp)
         print(res)
 
         xPoints = []
@@ -501,6 +609,8 @@ if __name__ == "__main__":
 
     if(user_expl_tests_cond):
         res = user_expl_tests(train_dict_explicit, train_dict_implicit, test_dict_expl)
+        with open('result-expl-user-based.json', 'w') as fp:
+            json.dump(res, fp)
         print(res)
 
         xPoints = []
@@ -557,6 +667,16 @@ if __name__ == "__main__":
     if(item_tests_cond):
         user_based_test_dict_expl = invert_dict(test_dict_expl) 
         res = item_tests(train_dict_explicit, train_dict_implicit, test_dict_expl, user_based_test_dict_expl)
+        print(res)
+    if(item_impl_test_cond):
+        folds_implicit = divide_dataset(implicit_user_based_utility, 3)
+        train_dict_implicit = merge_dicts([fold for fold in folds_implicit[:-1]])
+        test_dict_impl = folds_implicit[-1]
+
+        user_based_test_dict_impl = invert_dict(test_dict_impl) 
+        res = item_binary_tests(train_dict_explicit, train_dict_implicit, test_dict_impl, user_based_test_dict_impl)
+        with open('result-binary-item-based.json', 'w') as fp:
+            json.dump(res, fp)
         print(res)
 
     if(a_tuning):
